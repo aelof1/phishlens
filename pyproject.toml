@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phishlens"
+version = "1.0.0"
+description = "Offline phishing email (.eml) analyzer"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+phishlens = "phishlens.cli:main"
+
+[tool.setuptools]
+packages = ["phishlens"]

