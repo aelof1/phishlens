@@ -7,7 +7,7 @@ name = "phishlens"
 version = "1.0.0"
 description = "Offline phishing email (.eml) analyzer"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = []
 

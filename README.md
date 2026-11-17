@@ -34,7 +34,7 @@ Each problem adds points. Final verdict:
 
 ## Requirements
 
-- **Python 3.9 or newer**
+- **Python 3.10 or newer**
 - No external libraries: Python standard library only.
 - `pytest` only if you want to run the tests.
 
