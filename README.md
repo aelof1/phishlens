@@ -1,12 +1,52 @@
 # phishlens
 
-Command-line phishing email analyzer. Give it an `.eml` file and it checks the headers, links and attachments, then gives a risk score out of 100.
+[![tests](https://github.com/aelof1/phishlens/actions/workflows/tests.yml/badge.svg)](https://github.com/aelof1/phishlens/actions/workflows/tests.yml)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Dependencies: none](https://img.shields.io/badge/python%20dependencies-none-brightgreen)
 
-The command line tool runs **offline**: the tool never clicks anything and never sends anything to the Internet, so it's safe to use on a real suspicious email.
+**Self-hosted phishing email analyzer**: command line, web interface, read-only IMAP connector and optional AI second opinion.
 
-## Web interface, AI and mailbox connector
+It checks headers, links and attachments, then gives an explainable risk score out of 100. It never opens a link.
 
-phishlens also runs as a self-hosted web app on Linux, with an IMAP connector and an optional AI opinion: see [web/README.md](web/README.md) (in French). With the connector or a remote AI API enabled, it does use the network.
+![Web interface showing a phishing verdict](docs/desktop.png)
+
+## Features
+
+- **Explainable scoring**: every point comes with the rule that triggered it
+- **Command line**: works fully offline, with JSON output for scripts
+- **Web interface**: upload or paste an email, from a computer or a phone
+- **Mailbox connector**: IMAP over TLS, read-only, scans every 5 minutes
+- **Optional AI opinion**: any OpenAI-compatible API, for example a local Ollama; it never changes the score
+- **No third-party Python packages** at runtime
+
+## Architecture
+
+```mermaid
+flowchart LR
+    M[Mailbox] -- "IMAP/TLS, read-only" --> S[Scanner<br>systemd timer]
+    S --> E[Rule engine]
+    E --> D[(SQLite)]
+    D --> W[Web UI<br>Apache + mod_wsgi]
+    U[.eml upload] --> W
+    W --> E
+    S -. optional .-> A[AI API]
+    W -. optional .-> A
+```
+
+## Deploy the web app
+
+Debian or Ubuntu, on premises or in a private cloud network:
+
+```bash
+git clone https://github.com/aelof1/phishlens.git
+cd phishlens
+sudo ./deploy/install.sh
+```
+
+Configuration, network rules and security notes: [web/README.md](web/README.md).
+
+> **Project status:** early version. Automated tests run on Linux and Windows. Test the Apache deployment on your own server before relying on it. The command line is offline; the mailbox connector and the AI option use the network.
 
 ## Why I built this
 
@@ -28,7 +68,7 @@ Each problem adds points. Final verdict:
 - **30 to 59**: SUSPICIOUS
 - **60 and above**: PHISHING
 
-## Compatibility
+## Command line compatibility
 
 | System | Works? |
 |---|---|
@@ -133,7 +173,12 @@ The `samples/` folder contains a fake phishing email and a real legitimate email
 phishlens/
 ├── phishlens/
 │   ├── analyzer.py   # all the analysis logic
-│   └── cli.py        # command line
+│   ├── cli.py        # command line
+│   ├── imap.py       # mailbox connector
+│   ├── ai.py         # optional AI opinion
+│   └── store.py      # SQLite results
+├── web/              # web interface and Apache configuration
+├── deploy/           # installer and systemd units
 ├── samples/          # example emails
 └── tests/            # pytest tests
 ```
@@ -157,6 +202,10 @@ python3 -m pytest
 - Send attachment hashes to VirusTotal (`--online` option)
 - Detect domains imitating a brand (`paypa1`, `rnicrosoft`…)
 
+## Security
+
+See [SECURITY.md](SECURITY.md).
+
 ## License
 
-MIT
+[MIT](LICENSE)

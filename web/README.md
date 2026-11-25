@@ -1,51 +1,50 @@
-# phishlens : interface web, IA et connecteur e-mail
+# phishlens: web interface, AI and mailbox connector
 
-Fonctionne sur un serveur Linux Debian / Ubuntu (Python 3.10+), sur site ou dans un VPC.
+Runs on a Debian or Ubuntu server (Python 3.10+), on premises or in a VPC.
+The web interface is currently in French.
 
-```
-Boîte mail --IMAP (TLS, lecture seule)--> scan toutes les 5 min --> SQLite --> Apache (mot de passe)
-                                              \--> IA (facultative, Ollama en local)
-```
+<img src="../docs/mobile.png" alt="Mobile view" width="300">
 
-## Installation
+## Install
 
 ```bash
 sudo apt install git
-git clone https://github.com/aelof1/phishlens
+git clone https://github.com/aelof1/phishlens.git
 cd phishlens
 sudo ./deploy/install.sh
 ```
 
-Puis suis les étapes affichées à la fin.
+Then follow the steps printed at the end. If you see the default Apache page:
+`sudo a2dissite 000-default && sudo systemctl reload apache2`.
 
-Si la page par défaut d'Apache s'affiche : `sudo a2dissite 000-default && sudo systemctl reload apache2`.
+## Connect a mailbox
 
-## Connecter sa boîte mail
-
-Remplis `/etc/phishlens/mail.env`, puis teste :
+Fill in `/etc/phishlens/mail.env`, then test:
 
 ```bash
 sudo systemctl start phishlens-scan
 journalctl -u phishlens-scan -n 20
 ```
 
-- Gmail : `imap.gmail.com`, avec un mot de passe d'application (validation en deux étapes requise).
-- Microsoft 365 : non pris en charge, car il exige OAuth.
-- Autres serveurs : IMAP sur TLS (port 993).
+- Gmail: `imap.gmail.com` with an app password (2-Step Verification required).
+- Microsoft 365: not supported, because it requires OAuth.
+- Other servers: IMAP over TLS (port 993).
 
-## IA locale (facultatif)
+## Local AI (optional)
 
-Installe [Ollama](https://ollama.com/download), puis `ollama pull llama3.1`.
-Décommente la ligne `PHISHLENS_AI_URL` dans `/etc/phishlens/ai.env`, puis `sudo systemctl restart apache2`.
-Sans carte graphique, les réponses peuvent être lentes.
+Install [Ollama](https://ollama.com/download), then run `ollama pull llama3.1`.
+Uncomment the `PHISHLENS_AI_URL` line in `/etc/phishlens/ai.env`, then run
+`sudo systemctl restart apache2`. Without a GPU, answers can be slow.
 
-L'avis de l'IA est indicatif : un e-mail piégé peut tenter de la manipuler. Le score vient uniquement des règles.
+The AI opinion is advisory: a malicious email can try to manipulate it. The score comes from the rules only.
 
-## Réseau et sécurité
+## Network and security
 
-- Entrant : 443 (et 80 pour Let's Encrypt), limité à ton réseau ou VPN. Pas d'exposition publique conseillée.
-- Sortant : 993 vers le serveur mail.
-- HTTPS : `sudo apt install certbot python3-certbot-apache && sudo certbot --apache -d ton-domaine.fr`
-  (nom de domaine public requis ; sinon utilise le certificat de ton autorité interne).
-- Sans HTTPS, le mot de passe circule en clair.
-- La base garde sujet, expéditeur, alertes et avis IA, pas le corps des messages.
+- Inbound: 443 (and 80 for Let's Encrypt), limited to your network or VPN. Public exposure is not recommended.
+- Outbound: 993 to the mail server, plus the AI API if it is remote.
+- HTTPS: `sudo apt install certbot python3-certbot-apache && sudo certbot --apache -d your-domain.com`
+  (needs a public domain name; otherwise use a certificate from your internal authority).
+- Without HTTPS, the password travels in clear text.
+- The database keeps subject, sender, findings and AI opinion, not message bodies.
+
+Troubleshooting: `sudo tail /var/log/apache2/phishlens_error.log`
