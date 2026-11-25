@@ -8,6 +8,7 @@ from phishlens.analyzer import analyze_bytes
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = (ROOT / "samples" / "phishing.eml").read_bytes()
+RAW = RAW.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")  # same bytes on every OS
 
 
 class FakeIMAP:
@@ -58,7 +59,7 @@ def test_web_dashboard_escapes(tmp_path, monkeypatch):
 
 def test_web_upload_like_a_browser():
     app = runpy.run_path(str(ROOT / "web" / "app.wsgi"))
-    body = (b'--B\r\nContent-Disposition: form-data; name="file"; filename="a.eml"\r\n'
+    body = (b'--zz9form\r\nContent-Disposition: form-data; name="file"; filename="a.eml"\r\n'
             b"Content-Type: message/rfc822\r\n\r\n" + RAW + b"\r\n"
-            b'--B\r\nContent-Disposition: form-data; name="source"\r\n\r\n\r\n--B--\r\n')
-    assert app["read_form"]("multipart/form-data; boundary=B", body) == RAW
+            b'--zz9form\r\nContent-Disposition: form-data; name="source"\r\n\r\n\r\n--zz9form--\r\n')
+    assert app["read_form"]("multipart/form-data; boundary=zz9form", body) == RAW
