@@ -1,0 +1,20 @@
+[Unit]
+Description=phishlens mailbox scan
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=phishlens
+Group=phishlens
+WorkingDirectory=/opt/phishlens
+EnvironmentFile=/etc/phishlens/ai.env
+EnvironmentFile=/etc/phishlens/mail.env
+ExecStart=/usr/bin/python3 -m phishlens.imap
+TimeoutStartSec=2h
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/phishlens
+UMask=0077

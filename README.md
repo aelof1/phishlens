@@ -2,7 +2,11 @@
 
 Command-line phishing email analyzer. Give it an `.eml` file and it checks the headers, links and attachments, then gives a risk score out of 100.
 
-Everything runs **offline**: the tool never clicks anything and never sends anything to the Internet, so it's safe to use on a real suspicious email.
+The command line tool runs **offline**: the tool never clicks anything and never sends anything to the Internet, so it's safe to use on a real suspicious email.
+
+## Web interface, AI and mailbox connector
+
+phishlens also runs as a self-hosted web app on Linux, with an IMAP connector and an optional AI opinion: see [web/README.md](web/README.md) (in French). With the connector or a remote AI API enabled, it does use the network.
 
 ## Why I built this
 
