@@ -1,0 +1,43 @@
+# phishlens for homelabs.
+#   docker compose up -d                      web interface only
+#   docker compose --profile mail up -d       + mailbox scanner (fill .env first)
+#   docker compose --profile ai up -d         + local Ollama for the AI opinion
+# First start: `docker compose logs web` shows the setup code for the admin account.
+
+services:
+  web:
+    build: .
+    image: phishlens:local
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - phishlens-data:/data
+    restart: unless-stopped
+
+  scanner:
+    image: phishlens:local
+    build: .
+    command: ["phishlens", "scan", "--every", "300"]
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - phishlens-data:/data
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+    profiles: ["mail"]
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    profiles: ["ai"]
+
+volumes:
+  phishlens-data:
+  ollama-data:

@@ -28,6 +28,8 @@ ICONS = {
     "spark": '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
     "mail": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
     "check": '<path d="M5 12l5 5 9-10"/>',
+    "gear": '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3'
+            'M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
 }
 
 VERDICT_CLASS = {"PHISHING": "bad", "SUSPICIOUS": "warn", "PROBABLY SAFE": "ok"}
@@ -88,6 +90,7 @@ def layout(ctx, title: str, body: str, active: str = "") -> bytes:
     nav = [("/", "scan", "nav_analyze"), ("/mailbox", "inbox", "nav_mailbox")]
     if user["role"] == "admin":
         nav.append(("/admin/users", "users", "nav_users"))
+        nav.append(("/admin/settings", "gear", "nav_settings"))
     nav.append(("/account", "user", "nav_account"))
     current = ' class="nav-link active" aria-current="page"'
     links = "".join(
@@ -386,3 +389,72 @@ def account_page(ctx) -> bytes:
   <button class="btn primary">{esc(t("change_password"))}</button>
 </form></section>"""
     return layout(ctx, t("account_title"), body, "/account")
+
+
+# --- settings --------------------------------------------------------------
+
+def settings_page(ctx, cfg: dict, test=None, error_key: str | None = None) -> bytes:
+    from .. import ai
+    t = ctx.t
+    current = ctx.ai
+    if current["url"]:
+        host = current["url"].split("//")[-1].split("/")[0]
+        status = (f'<p class="status status-on">{icon("spark")} '
+                  f'{esc(t("ai_status_on", model=current["model"], host=host))}</p>')
+    else:
+        status = f'<p class="status">{esc(t("ai_status_off"))}</p>'
+
+    notice = ""
+    if test is not None:
+        ok, text = test
+        key = "ai_test_ok" if ok else "ai_test_fail"
+        notice = (f'<div class="flash flash-{"ok" if ok else "bad"}" role="status">'
+                  f'{esc(t(key, reply=text[:300], error=text[:300]))}</div>')
+    elif error_key:
+        notice = flash(t, None, error_key)
+
+    if current["source"] == "env":
+        body = f"""<section class="card narrow"><h3>{icon("spark")} {esc(t("ai_title"))}</h3>{status}
+<p class="muted">{esc(t("ai_env_note"))}</p></section>"""
+        return layout(ctx, t("settings_title"), body, "/admin/settings")
+
+    selected = cfg.get("provider") or "ollama"
+    options = "".join(
+        f'<option value="{k}" data-url="{esc(p["url"])}" data-model="{esc(p["model"])}" '
+        f'data-cloud="{int(p["cloud"])}"{" selected" if k == selected else ""}>{esc(p["label"])}</option>'
+        for k, p in ai.PROVIDERS.items())
+    preset = ai.PROVIDERS[selected]
+    saved_key = current["key"] if current["url"].rstrip("/") == (cfg.get("url") or "").rstrip("/") else ""
+    if saved_key:
+        key_hint = t("ai_key_keep", last=saved_key[-4:])
+        clear = (f'<label class="check"><input type="checkbox" name="clear_key" value="1"> '
+                 f'{esc(t("ai_clear_key"))}</label>')
+    else:
+        key_hint, clear = t("ai_key_placeholder"), ""
+    cloud_hidden = "" if ai.is_cloud({**cfg, "provider": selected}) else " hidden"
+    disable = ""
+    if current["url"]:
+        disable = f"""<form method="post" action="/admin/settings" class="inline">{csrf_field(ctx.csrf)}
+<input type="hidden" name="action" value="disable"><button class="btn ghost danger">{esc(t("ai_disable"))}</button></form>"""
+
+    body = f"""<p class="muted">{esc(t("settings_intro"))}</p>
+<section class="card narrow">
+<h3>{icon("spark")} {esc(t("ai_title"))}</h3>
+{status}{notice}
+<form method="post" action="/admin/settings" class="stack" id="ai-form">{csrf_field(ctx.csrf)}
+  <label>{esc(t("ai_provider"))}<select name="provider" data-provider>{options}</select></label>
+  <div class="flash flash-warn" data-cloud-warning{cloud_hidden}>{icon("alert")} {esc(t("ai_cloud_warning"))}</div>
+  <label>{esc(t("ai_url"))}<input name="url" value="{esc(cfg.get("url") or preset["url"])}" placeholder="https://…/v1" class="mono" data-url required></label>
+  <label>{esc(t("ai_model"))}<input name="model" value="{esc(cfg.get("model") or preset["model"])}" class="mono" data-model required></label>
+  <label>{esc(t("ai_key"))}<input type="password" name="key" autocomplete="off" placeholder="{esc(key_hint)}">
+    <small class="muted">{esc(t("ai_key_storage"))}</small></label>
+  {clear}
+  <div class="row">
+    <button class="btn primary" name="action" value="save">{esc(t("save"))}</button>
+    <button class="btn" name="action" value="test">{esc(t("ai_test"))}</button>
+  </div>
+</form>
+<p class="hint">{esc(t("ai_docker_hint"))}</p>
+{disable}
+</section>"""
+    return layout(ctx, t("settings_title"), body, "/admin/settings")

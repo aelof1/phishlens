@@ -127,7 +127,7 @@ small { font-size: .82rem; }
 .row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
 
 label { display: flex; flex-direction: column; gap: .35rem; font-weight: 600; font-size: .9rem; }
-input:not([type=file]):not([type=hidden]), textarea, select {
+input:not([type=file]):not([type=hidden]):not([type=checkbox]), textarea, select {
   width: 100%; padding: .6rem .75rem; border-radius: 10px; border: 1px solid var(--border);
   background: var(--surface-2); color: var(--text); font: inherit; font-weight: 400; font-size: 16px;
   transition: border-color .15s, box-shadow .15s;
@@ -153,6 +153,17 @@ textarea { min-height: 150px; resize: vertical; font-family: var(--mono); font-s
   animation: rise .25s ease-out; }
 .flash-ok { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 25%, transparent); }
 .flash-bad { background: var(--bad-soft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 25%, transparent); }
+
+.flash-warn { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 25%, transparent);
+  display: flex; gap: .5rem; align-items: flex-start; margin: 0; }
+.flash-warn .icon { width: 18px; height: 18px; margin-top: .1rem; }
+[hidden] { display: none !important; }
+.status { display: flex; align-items: center; gap: .45rem; color: var(--muted); font-weight: 600; }
+.status .icon { width: 18px; height: 18px; }
+.status-on { color: var(--ok); }
+label.check { flex-direction: row; align-items: center; gap: .5rem; font-weight: 500; }
+label.check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.hint + form.inline { margin-top: .9rem; }
 
 /* ---------- dropzone ---------- */
 .dropzone {

@@ -30,6 +30,7 @@ def scan(client, db, mailbox: str, folder: str, limit: int) -> int:
     if status != "OK":
         raise RuntimeError("IMAP search failed")
     known = store.seen(db, key, uidvalidity)
+    ai_cfg = ai.config(db)
     recent = [int(u) for u in data[0].split()][-limit:]
     count = 0
     for uid in recent:
@@ -46,9 +47,9 @@ def scan(client, db, mailbox: str, folder: str, limit: int) -> int:
             msg = email.message_from_bytes(parts[0][1], policy=policy.default)
             report = analyze_message(msg)
             opinion = ""
-            if ai.enabled():
+            if ai_cfg["url"]:
                 try:
-                    opinion = ai.ask_ai(msg, report)
+                    opinion = ai.ask_ai(msg, report, cfg=ai_cfg)
                 except Exception as exc:
                     print(f"uid {uid}: AI unavailable ({exc})", file=sys.stderr)
             store.save(db, key, uidvalidity, uid, report, opinion)

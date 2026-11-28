@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0
+
+- AI settings in the web interface (admins): presets for Ollama, OpenAI, Anthropic Claude, Mistral, Groq
+  and any OpenAI-compatible API, connection test, masked API key, cloud privacy warning
+- Claude through Anthropic's native Messages API (standard library, server-side refusal fallback)
+- Environment variables still override the interface; an empty `PHISHLENS_AI_URL` no longer disables it
+- Docker image (non-root, health check) and docker-compose with `mail` (scanner) and `ai` (Ollama) profiles
+- `phishlens scan [--every SECONDS]`
+- `.env.example` with every setting
+
 ## 1.2.0
 
 - New web interface: drag and drop, analysis without page reload, score gauge, light and dark themes, phone layout

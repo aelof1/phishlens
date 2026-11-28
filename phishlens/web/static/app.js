@@ -87,6 +87,27 @@
   }
   countUp(document);
 
+  // ---------- AI settings: fill URL and model from the chosen preset ----------
+  var provider = document.querySelector("[data-provider]");
+  if (provider) {
+    var urlInput = document.querySelector("[data-url]");
+    var modelInput = document.querySelector("[data-model]");
+    var warning = document.querySelector("[data-cloud-warning]");
+    var previous = provider.options[provider.selectedIndex];
+    provider.addEventListener("change", function () {
+      var opt = provider.options[provider.selectedIndex];
+      // Replace the fields only if they still hold the previous preset's values
+      if (!urlInput.value || urlInput.value === previous.getAttribute("data-url")) {
+        urlInput.value = opt.getAttribute("data-url");
+      }
+      if (!modelInput.value || modelInput.value === previous.getAttribute("data-model")) {
+        modelInput.value = opt.getAttribute("data-model");
+      }
+      warning.hidden = opt.getAttribute("data-cloud") !== "1";
+      previous = opt;
+    });
+  }
+
   // ---------- analyze form ----------
   var form = document.getElementById("analyze-form");
   if (!form) return;

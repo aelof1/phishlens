@@ -18,7 +18,8 @@ It checks headers, links and attachments, then gives an explainable risk score o
 - **Web interface**: drag and drop or paste an email, from a computer or a phone, in English or French, light or dark theme
 - **User accounts**: the first admin is created on first start; admins can add viewers
 - **Mailbox connector**: IMAP over TLS, read-only, scans every 5 minutes
-- **Optional AI opinion**: any OpenAI-compatible API (Ollama, OpenAI, Mistral…); it never changes the score
+- **Optional AI opinion**: set up from the web interface with Ollama (local), OpenAI, Claude, Mistral, Groq or any OpenAI-compatible API; it never changes the score
+- **Docker**: one `docker compose up -d` for a homelab, with optional mailbox scanner and local Ollama
 - **No third-party Python packages** at runtime, no CDN: works offline
 
 ## Quick start
@@ -27,15 +28,16 @@ It checks headers, links and attachments, then gives an explainable risk score o
 |---|---|
 | Analyze a file in a terminal | `phishlens mail.eml` |
 | Use the web interface on my computer (Windows, macOS, Linux) | `phishlens web`, then open http://127.0.0.1:8000 |
-| Run it on a server for my team or my homelab | [Deploy on a server](#deploy-on-a-server) |
+| Run it in my homelab | `docker compose up -d`: see [Docker](#docker) |
+| Install it on a Debian / Ubuntu server with Apache | [Deploy on a server](#deploy-on-a-server) |
 
-Install first: see [Installation](#installation).
+Install first (except for Docker): see [Installation](#installation).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    M[Mailbox] -- "IMAP/TLS, read-only" --> S[Scanner<br>systemd timer]
+    M[Mailbox] -- "IMAP/TLS, read-only" --> S[Scanner<br>systemd timer or Docker]
     S --> E[Rule engine]
     E --> D[(SQLite<br>results + accounts)]
     D --> W[Web UI<br>phishlens web or Apache]
@@ -67,7 +69,8 @@ Each problem adds points. Final verdict:
 |---|---|---|---|
 | Command line | Yes | Yes | Yes |
 | Web interface (`phishlens web`) | Yes | Yes | Yes |
-| Server deployment (Apache + scheduled mailbox scan) | Debian / Ubuntu | No | No |
+| Docker (web + scheduled mailbox scan) | Yes | Docker Desktop | Docker Desktop |
+| Server deployment (Apache + systemd scan) | Debian / Ubuntu | No | No |
 
 ## Requirements
 
@@ -173,6 +176,7 @@ Then open **http://127.0.0.1:8000**. It works the same on Windows, macOS and Lin
 2. **Analyze**: drop a `.eml` file or paste the source. The report shows the score, SPF/DKIM/DMARC, every finding, the links (as text, never clickable) and the attachment hashes.
 3. **Users** (admins): add accounts. *Admin* manages users; *viewer* analyzes emails and reads the mailbox page.
 4. **Mailbox**: results of the IMAP connector, with filters by verdict (see [Connect a mailbox](web/README.md#connect-a-mailbox)).
+5. **Settings** (admins): turn on the AI opinion, see [below](#ai-opinion-optional).
 
 Options:
 
@@ -199,34 +203,68 @@ phishlens user add alice --role admin
 
 The web interface and the mailbox scanner can ask a language model for a second opinion. It is shown in its own card, in the interface language, and **never changes the score**: a malicious email can try to manipulate a model.
 
-Any OpenAI-compatible API works. Create a file, for example `ai.env`:
+### From the web interface (recommended)
 
-```ini
-# Local Ollama: emails stay on your machine
-PHISHLENS_AI_URL=http://127.0.0.1:11434/v1
-PHISHLENS_AI_MODEL=llama3.1
+Sign in as an admin, open **Settings**, pick a provider, then **Test connection** and **Save**. The top bar shows the model in use.
 
-# Or a cloud API (the email content is then sent to that provider):
-#PHISHLENS_AI_URL=https://api.openai.com/v1
-#PHISHLENS_AI_MODEL=gpt-4o-mini
-#PHISHLENS_AI_KEY=sk-...
-```
+| Provider | Base URL (filled in for you) | Default model | API key | Email content leaves your network? |
+|---|---|---|---|---|
+| Ollama (local) | `http://127.0.0.1:11434/v1` | `llama3.1` | no | **No** |
+| OpenAI (ChatGPT) | `https://api.openai.com/v1` | `gpt-4o-mini` | yes | Yes |
+| Anthropic (Claude) | `https://api.anthropic.com/v1` | `claude-opus-5-5` | yes | Yes |
+| Mistral AI | `https://api.mistral.ai/v1` | `mistral-small-latest` | yes | Yes |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.1-8b-instant` | yes | Yes |
+| Other | any OpenAI-compatible API (vLLM, LM Studio, LiteLLM…) | | optional | depends |
 
-Then start the web interface with it:
+The model field is free text: use any model your account offers. Claude goes through Anthropic's native Messages API, the others through the OpenAI-compatible format, all with the Python standard library.
 
-```bash
-phishlens web --env-file ai.env
-```
+Ollama: install it from [ollama.com](https://ollama.com/download) (Windows, macOS, Linux), then `ollama pull llama3.1`. Without a GPU, answers can take a while.
 
-The top bar then shows the model name instead of "AI off". For Ollama: install it from [ollama.com](https://ollama.com/download) (Windows, macOS, Linux), then `ollama pull llama3.1`. Without a GPU, answers can take a while.
+The API key is stored in the phishlens database (never shown again in the interface, only its last 4 characters). Protect the database file and its backups. When you switch to another URL, the saved key is not reused, so it is never sent to a different host by mistake.
+
+### With environment variables
+
+For automated setups, variables override the Settings page (which then becomes read-only):
 
 | Variable | Meaning |
 |---|---|
-| `PHISHLENS_AI_URL` | Base URL of the API (empty = AI off) |
-| `PHISHLENS_AI_MODEL` | Model name (default `llama3.1`) |
-| `PHISHLENS_AI_KEY` | API key, only for a remote API |
+| `PHISHLENS_AI_URL` | Base URL of the API (empty = use the Settings page) |
+| `PHISHLENS_AI_PROVIDER` | `ollama`, `openai`, `anthropic`, `mistral`, `groq` or `custom` (guessed from the URL if empty) |
+| `PHISHLENS_AI_MODEL` | Model name |
+| `PHISHLENS_AI_KEY` | API key |
 | `PHISHLENS_AI_TIMEOUT` | Seconds (default 120) |
 | `PHISHLENS_LANG` | Language of the scanner's AI answers: `fr` (default) or `en` |
+
+Put them in a file and start with `phishlens web --env-file ai.env`, or in `.env` for Docker.
+
+## Docker
+
+For a homelab (Proxmox, Unraid, TrueNAS, a Raspberry Pi…). Needs Docker with Compose v2.24 or newer.
+
+```bash
+git clone https://github.com/aelof1/phishlens.git
+cd phishlens
+docker compose up -d
+docker compose logs web        # shows the setup code for the admin account
+```
+
+Open `http://<your-server>:8000` and create the admin account with the setup code.
+
+Optional services, as Compose profiles:
+
+```bash
+cp .env.example .env           # then fill in the PHISHLENS_IMAP_* lines
+docker compose --profile mail up -d              # + mailbox scanner, every 5 minutes
+docker compose --profile ai up -d                # + local Ollama
+docker compose exec ollama ollama pull llama3.1  # once, to download the model
+```
+
+With the `ai` profile, choose **Ollama** in Settings and set the URL to `http://ollama:11434/v1`.
+
+- Data (accounts, mailbox results, AI settings) lives in the `phishlens-data` volume.
+- The container runs as a non-root user and has a health check on `/healthz` (also handy for Uptime Kuma).
+- Account commands: `docker compose exec web phishlens user reset-password admin`.
+- Exposing it beyond your LAN: put it behind a reverse proxy with HTTPS (Traefik, Caddy, Nginx Proxy Manager) and set `PHISHLENS_TRUST_PROXY=1` in `.env`.
 
 ## Deploy on a server
 
@@ -248,13 +286,14 @@ Setup, mailbox connection, AI, HTTPS and network rules: [web/README.md](web/READ
 phishlens/
 ├── phishlens/
 │   ├── analyzer.py   # all the analysis logic
-│   ├── cli.py        # command line: analyze, web, user
+│   ├── cli.py        # command line: analyze, web, scan, user
 │   ├── imap.py       # mailbox connector
-│   ├── ai.py         # optional AI opinion
+│   ├── ai.py         # optional AI opinion (OpenAI-compatible and Claude)
 │   ├── store.py      # SQLite: results, accounts, settings
 │   └── web/          # web interface (WSGI app, accounts, HTML, CSS, JS)
 ├── web/              # Apache entry point and configuration
 ├── deploy/           # installer and systemd units
+├── Dockerfile, docker-compose.yml
 ├── samples/          # example emails
 └── tests/            # pytest tests
 ```
@@ -278,8 +317,6 @@ When a dodgy email comes in, I always do the same checks by hand: look at SPF/DK
 
 ## Roadmap
 
-- AI settings from the web interface (OpenAI, Claude, Mistral, Ollama presets)
-- Docker image and docker-compose for homelabs
 - World map of sending IP addresses (offline GeoIP) and live dashboard
 - Detect domains imitating a brand (`paypa1`, `rnicrosoft`…)
 

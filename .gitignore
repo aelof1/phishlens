@@ -15,3 +15,6 @@ venv/
 # Local output
 reports/
 *.local.json
+
+# Local databases
+*.db

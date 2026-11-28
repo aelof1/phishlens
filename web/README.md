@@ -54,17 +54,22 @@ Results appear on the **Mailbox** page.
 
 ## AI opinion (optional)
 
-Install [Ollama](https://ollama.com/download), then run `ollama pull llama3.1`.
-Uncomment the `PHISHLENS_AI_URL` line in `/etc/phishlens/ai.env`, then run
-`sudo systemctl restart apache2`. Without a GPU, answers can be slow.
-Other providers and all variables: [main README](../README.md#ai-opinion-optional).
+Sign in as an admin, open **Settings**, choose a provider (local Ollama, OpenAI, Claude, Mistral, Groq or any
+OpenAI-compatible API), then **Test connection** and **Save**. The mailbox scanner uses the same settings.
+
+For a local model: install [Ollama](https://ollama.com/download), run `ollama pull llama3.1`, and keep the default
+URL `http://127.0.0.1:11434/v1`. Without a GPU, answers can be slow.
+
+`/etc/phishlens/ai.env` still works: when `PHISHLENS_AI_URL` is set there, it overrides the Settings page
+(restart Apache after a change). More details: [main README](../README.md#ai-opinion-optional).
 
 The AI opinion is advisory: a malicious email can try to manipulate it. The score comes from the rules only.
+With a cloud provider, the content of each analyzed email is sent to that provider.
 
 ## Network and security
 
 - Inbound: 443 (and 80 for Let's Encrypt), limited to your network or VPN. Public exposure is not recommended.
-- Outbound: 993 to the mail server, plus the AI API if it is remote.
+- Outbound: 993 to the mail server, plus the AI API if it is remote (443).
 - HTTPS: `sudo apt install certbot python3-certbot-apache && sudo certbot --apache -d your-domain.com`
   (needs a public domain name; otherwise use a certificate from your internal authority).
 - Without HTTPS, passwords travel in clear text. Over HTTPS, session cookies are marked `Secure` automatically.

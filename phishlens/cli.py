@@ -2,6 +2,7 @@
 
   phishlens <file.eml>... [--json]      analyse emails
   phishlens web [--host] [--port]       start the web interface
+  phishlens scan [--every SECONDS]      scan the mailbox (PHISHLENS_IMAP_*)
   phishlens user add|reset-password|list|delete
 """
 
@@ -128,7 +129,8 @@ def web_main(argv: list[str]) -> int:
     shown = "localhost" if args.host in ("0.0.0.0", "::") else args.host
     print(f"phishlens {__version__} web interface: http://{shown}:{args.port}")
     print(f"  database : {store.default_path()}")
-    print(f"  AI       : {ai.model_name() + ' via ' + os.environ['PHISHLENS_AI_URL'] if ai.enabled() else 'off'}")
+    cfg = ai.config()
+    print(f"  AI       : {cfg['model'] + ' via ' + cfg['url'] if cfg['url'] else 'off (Settings page)'}")
     if code:
         print(f"\n  First start: open the page and create the admin account.\n  Setup code: {code}\n")
     if not _is_local(args.host):
@@ -197,10 +199,42 @@ def user_main(argv: list[str]) -> int:
         db.close()
 
 
+# --- mailbox scan ----------------------------------------------------------
+
+def scan_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="phishlens scan",
+        description="Scan the mailbox set in PHISHLENS_IMAP_* (read-only). Once, or in a loop.")
+    parser.add_argument("--every", type=int, metavar="SECONDS",
+                        help="keep running and scan again every SECONDS (for Docker)")
+    parser.add_argument("--db", help="SQLite database file (default: per-OS data folder)")
+    args = parser.parse_args(argv)
+    if args.db:
+        os.environ["PHISHLENS_DB"] = args.db
+
+    import time
+
+    from . import imap
+    if not args.every:
+        return imap.main()
+    while True:
+        try:
+            code = imap.main()
+        except Exception as exc:  # network down, wrong password...: retry later
+            print(f"scan failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            code = 1
+        if code == 2:  # missing settings: retrying will not help
+            return 2
+        sys.stdout.flush()
+        time.sleep(max(30, args.every))
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] == "web":
         return web_main(argv[1:])
+    if argv and argv[0] == "scan":
+        return scan_main(argv[1:])
     if argv and argv[0] == "user":
         return user_main(argv[1:])
     return analyze_main(argv)

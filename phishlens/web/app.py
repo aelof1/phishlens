@@ -176,7 +176,8 @@ class Context:
         self.path = req.path
         self.ok = req.query.get("ok")
         self.err = req.query.get("err")
-        self.ai_model = ai.model_name() if ai.enabled() else None
+        self.ai = ai.config(db)
+        self.ai_model = self.ai["model"] if self.ai["url"] else None
 
 
 def pick_lang(req, user=None) -> str:
@@ -189,13 +190,13 @@ def pick_lang(req, user=None) -> str:
 
 # --- analysis --------------------------------------------------------------
 
-def run_analysis(raw: bytes, lang: str):
+def run_analysis(raw: bytes, lang: str, ai_cfg: dict):
     report = analyze_bytes(raw)
     ai_text, ai_failed = None, False
-    if ai.enabled():
+    if ai_cfg["url"]:
         try:
             msg = message_from_bytes(raw, policy=policy.default)
-            ai_text = ai.ask_ai(msg, report, lang=lang)
+            ai_text = ai.ask_ai(msg, report, lang=lang, cfg=ai_cfg)
         except Exception as exc:
             print(f"phishlens: AI unavailable ({type(exc).__name__})", file=sys.stderr)
             ai_failed = True
@@ -220,7 +221,7 @@ def analyze(ctx) -> Response:
                 status, content = "400 Bad Request", views.error_box(t("empty_input"))
             else:
                 try:
-                    content = views.report_html(t, *run_analysis(raw, t.lang))
+                    content = views.report_html(t, *run_analysis(raw, t.lang, ctx.ai))
                 except Exception:  # hostile input must never leak a traceback
                     print("phishlens: analysis failed", file=req.errors)
                     status, content = "400 Bad Request", views.error_box(t("parse_failed"))
@@ -245,7 +246,7 @@ def api_analyze(ctx) -> Response:
     if not raw:
         return json_response({"error": "empty"}, "400 Bad Request")
     try:
-        report, ai_text, ai_failed = run_analysis(raw, ctx.t.lang)
+        report, ai_text, ai_failed = run_analysis(raw, ctx.t.lang, ctx.ai)
     except Exception:
         print("phishlens: analysis failed", file=req.errors)
         return json_response({"error": "parse"}, "400 Bad Request")
@@ -368,7 +369,50 @@ def set_lang(req, db, session) -> Response:
     return resp
 
 
+def admin_settings(ctx) -> Response:
+    if ctx.user["role"] != "admin":
+        return Response(views.error_page(ctx.t, "err_forbidden"), "403 Forbidden")
+    stored = ctx.ai
+    if ctx.req.method == "GET":
+        return Response(views.settings_page(ctx, stored))
+    if stored["source"] == "env":
+        return redirect("/admin/settings?err=err_ai_env")
+    form = ctx.req.form()
+    action = form.get("action", "save")
+    if action == "disable":
+        for field in ("provider", "url", "model", "key"):
+            store.set_setting(ctx.db, "ai_" + field, None)
+        return redirect("/admin/settings?ok=ok_ai_disabled")
+
+    provider = form.get("provider", "")
+    if provider not in ai.PROVIDERS:
+        return redirect("/admin/settings?err=err_ai_provider")
+    url = form.get("url", "").strip() or ai.PROVIDERS[provider]["url"]
+    model = form.get("model", "").strip() or ai.PROVIDERS[provider]["model"]
+    key = form.get("key", "").strip()
+    # Reuse the saved key only for the same endpoint: never send it to another host
+    if not key and form.get("clear_key") != "1" and stored["url"].rstrip("/") == url.rstrip("/"):
+        key = stored["key"]
+    cfg = {"source": "db", "provider": provider, "url": url, "model": model, "key": key}
+    if not url.startswith(("http://", "https://")) or not model:
+        return Response(views.settings_page(ctx, cfg, error_key="err_ai_fields"), "400 Bad Request")
+
+    if action == "test":
+        try:
+            reply = ai.test_connection(cfg)
+            result = (True, reply)
+        except ai.AIError as exc:
+            result = (False, str(exc))
+        return Response(views.settings_page(ctx, cfg, test=result))
+
+    for field in ("provider", "url", "model", "key"):
+        store.set_setting(ctx.db, "ai_" + field, cfg[field] or None)
+    return redirect("/admin/settings?ok=ok_ai_saved")
+
+
 ROUTES = {
+    ("GET", "/admin/settings"): admin_settings,
+    ("POST", "/admin/settings"): admin_settings,
     ("GET", "/"): lambda ctx: Response(views.analyze_page(ctx)),
     ("POST", "/"): analyze,
     ("POST", "/api/analyze"): api_analyze,
