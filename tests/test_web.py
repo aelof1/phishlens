@@ -191,6 +191,23 @@ def test_cross_site_post_is_refused(db, admin):
     assert resp.code == 403 and auth.find_user(db, "x") is None
 
 
+def test_browser_form_posts_with_origin_header(db):
+    """Real browsers send Origin on form posts: same host, or "null" with strict privacy settings."""
+    form = {"code": auth.setup_code(db), "username": "boss", "password": PASSWORD, "confirm": PASSWORD}
+    resp = Client().post("/setup", form, headers={"Origin": "http://localhost"})
+    assert resp.code == 303 and auth.find_user(db, "boss")
+    for origin in ("http://localhost", "null"):
+        resp = Client().post("/login", {"username": "boss", "password": PASSWORD}, headers={"Origin": origin})
+        assert resp.code == 303 and resp.header("Location") == "/"
+    resp = Client().post("/login", {"username": "boss", "password": PASSWORD},
+                         headers={"Origin": "null", "Referer": "https://evil.example/page"})
+    assert resp.code == 403
+
+
+def test_referrer_policy_keeps_origin(db):
+    assert Client().get("/healthz").header("Referrer-Policy") == "same-origin"
+
+
 def test_admin_manages_users(db, admin):
     csrf = admin.get("/admin/users").csrf()
     resp = admin.post("/admin/users", {"csrf": csrf, "action": "add", "username": "bob",

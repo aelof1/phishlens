@@ -36,7 +36,9 @@ SECURITY_HEADERS = [
      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
      "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"),
     ("X-Content-Type-Options", "nosniff"),
-    ("Referrer-Policy", "no-referrer"),
+    # same-origin: never leaks the URL to other sites, but lets browsers send a real Origin
+    # header on our own form posts ("no-referrer" makes them send "Origin: null")
+    ("Referrer-Policy", "same-origin"),
     ("X-Frame-Options", "DENY"),
     ("Permissions-Policy", "camera=(), microphone=(), geolocation=()"),
 ]
@@ -101,9 +103,11 @@ class Request:
 
     def same_origin(self) -> bool:
         """Reject cross-site POSTs (CSRF defence in depth, on top of tokens)."""
-        origin = self.header("Origin") or self.header("Referer")
+        origin = self.header("Origin")
+        if not origin or origin == "null":  # "null": privacy settings, redirects, extensions
+            origin = self.header("Referer")
         if not origin:
-            return True
+            return True  # CSRF tokens and SameSite=Strict cookies still apply
         host = self.header("X-Forwarded-Host") if self.trust_proxy and self.header("X-Forwarded-Host") \
             else self.header("Host")
         return urlparse(origin).netloc.lower() == host.lower()

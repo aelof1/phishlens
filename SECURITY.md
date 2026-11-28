@@ -21,7 +21,7 @@ otherwise open an issue asking for a private contact, without any detail.
 - Every form and API call carries a CSRF token, and cross-site POSTs are refused (Origin check).
 - Five failed sign-ins from one address lock it out for 15 minutes.
 - Strict Content Security Policy (`script-src 'self'`, no inline script or style), `frame-ancestors 'none'`,
-  `nosniff`, `no-referrer`. No CDN: every script and style is served by phishlens.
+  `nosniff`, `Referrer-Policy: same-origin` (no URL is ever sent to another site). No CDN: every script and style is served by phishlens.
 - Static files come from a fixed list; no path is built from the URL. Redirects only go to local paths.
 
 **Privacy**
