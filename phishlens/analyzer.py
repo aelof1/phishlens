@@ -43,6 +43,8 @@ URGENCY_WORDS = [
 ]
 
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+", re.IGNORECASE)
+# IP literal in a Received header: [1.2.3.4], [IPv6:2001:db8::1], (1.2.3.4)
+RECEIVED_IP_RE = re.compile(r"[\[(](?:IPv6:)?([0-9a-fA-F:.]{7,45})[\])]")
 
 
 @dataclass
@@ -83,6 +85,8 @@ class Report:
     links: list[Link] = field(default_factory=list)
     attachments: list[Attachment] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
+    received_ips: list[str] = field(default_factory=list)  # public relay IPs, newest first
+    origin_ip: str = ""  # closest public IP to the sender
 
     @property
     def score(self) -> int:
@@ -108,6 +112,8 @@ class Report:
             "findings": [f.to_dict() for f in self.findings],
             "score": self.score,
             "verdict": self.verdict,
+            "origin_ip": self.origin_ip,
+            "received_ips": self.received_ips,
         }
 
 
@@ -244,6 +250,28 @@ def _check_link(link: Link) -> list[Finding]:
     return out
 
 
+def received_ips(msg: EmailMessage) -> list[str]:
+    """Public IPs from the "from" part of each Received header, newest hop first.
+
+    Headers are prepended by each server, so the last public IP is the closest to the sender.
+    Only the "from ..." part is read: the "by ..." part names the receiving server.
+    """
+    out: list[str] = []
+    for header in msg.get_all("Received") or []:
+        text = " ".join(str(header).split())
+        if not text.lower().startswith("from "):
+            continue
+        sender_part = re.split(r"\sby\s", text, maxsplit=1, flags=re.IGNORECASE)[0]
+        for candidate in RECEIVED_IP_RE.findall(sender_part):
+            try:
+                addr = ipaddress.ip_address(candidate)
+            except ValueError:
+                continue
+            if addr.is_global and str(addr) not in out:
+                out.append(str(addr))
+    return out
+
+
 def analyze_message(msg: EmailMessage) -> Report:
     report = Report(
         subject=str(msg.get("Subject", "")),
@@ -251,6 +279,9 @@ def analyze_message(msg: EmailMessage) -> Report:
         reply_to=str(msg.get("Reply-To", "")),
         return_path=str(msg.get("Return-Path", "")),
     )
+
+    report.received_ips = received_ips(msg)
+    report.origin_ip = report.received_ips[-1] if report.received_ips else ""
 
     # 1. Authentication
     report.auth = parse_auth_results(msg)

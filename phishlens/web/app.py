@@ -17,7 +17,7 @@ from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .. import ai, config, store
+from .. import ai, config, geoip, store
 from ..analyzer import analyze_bytes
 from . import auth, views
 from .i18n import LANGS, Translator, from_accept_language
@@ -27,7 +27,8 @@ config.load_default_env()
 MAX_SIZE = 2 * 1024 * 1024  # 2 MB
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_FILES = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8",
-                "theme.js": "text/javascript; charset=utf-8", "logo.svg": "image/svg+xml"}
+                "theme.js": "text/javascript; charset=utf-8", "logo.svg": "image/svg+xml",
+                "world.svg": "image/svg+xml"}
 SESSION_COOKIE = "phishlens_session"
 
 SECURITY_HEADERS = [
@@ -190,8 +191,11 @@ def pick_lang(req, user=None) -> str:
 
 # --- analysis --------------------------------------------------------------
 
-def run_analysis(raw: bytes, lang: str, ai_cfg: dict):
+def run_analysis(raw: bytes, lang: str, ai_cfg: dict, db=None):
     report = analyze_bytes(raw)
+    country = geoip.country(report.origin_ip)
+    if db is not None:
+        store.record_upload(db, report, country)
     ai_text, ai_failed = None, False
     if ai_cfg["url"]:
         try:
@@ -200,7 +204,7 @@ def run_analysis(raw: bytes, lang: str, ai_cfg: dict):
         except Exception as exc:
             print(f"phishlens: AI unavailable ({type(exc).__name__})", file=sys.stderr)
             ai_failed = True
-    return report, ai_text, ai_failed
+    return report, ai_text, ai_failed, country
 
 
 def analyze(ctx) -> Response:
@@ -221,7 +225,7 @@ def analyze(ctx) -> Response:
                 status, content = "400 Bad Request", views.error_box(t("empty_input"))
             else:
                 try:
-                    content = views.report_html(t, *run_analysis(raw, t.lang, ctx.ai))
+                    content = views.report_html(t, *run_analysis(raw, t.lang, ctx.ai, ctx.db))
                 except Exception:  # hostile input must never leak a traceback
                     print("phishlens: analysis failed", file=req.errors)
                     status, content = "400 Bad Request", views.error_box(t("parse_failed"))
@@ -246,11 +250,12 @@ def api_analyze(ctx) -> Response:
     if not raw:
         return json_response({"error": "empty"}, "400 Bad Request")
     try:
-        report, ai_text, ai_failed = run_analysis(raw, ctx.t.lang, ctx.ai)
+        report, ai_text, ai_failed, country = run_analysis(raw, ctx.t.lang, ctx.ai, ctx.db)
     except Exception:
         print("phishlens: analysis failed", file=req.errors)
         return json_response({"error": "parse"}, "400 Bad Request")
-    return json_response({"report": report.to_dict(), "ai": ai_text, "ai_error": ai_failed})
+    return json_response({"report": report.to_dict(), "country": country, "ai": ai_text,
+                          "ai_error": ai_failed})
 
 
 # --- pages -----------------------------------------------------------------
@@ -369,16 +374,38 @@ def set_lang(req, db, session) -> Response:
     return resp
 
 
+def dashboard(ctx) -> Response:
+    geo = geoip.load()
+    stats = store.live_stats(ctx.db)
+    if ctx.req.query.get("partial") == "1":
+        return Response(views.dashboard_live(ctx, stats, geo is not None))
+    return Response(views.dashboard_page(ctx, stats, geo.version if geo else None))
+
+
+def api_stats(ctx) -> Response:
+    stats = store.live_stats(ctx.db)
+    geo = geoip.load()
+    stats["geoip"] = geo.version if geo else None
+    return json_response(stats)
+
+
 def admin_settings(ctx) -> Response:
     if ctx.user["role"] != "admin":
         return Response(views.error_page(ctx.t, "err_forbidden"), "403 Forbidden")
     stored = ctx.ai
     if ctx.req.method == "GET":
         return Response(views.settings_page(ctx, stored))
-    if stored["source"] == "env":
-        return redirect("/admin/settings?err=err_ai_env")
     form = ctx.req.form()
     action = form.get("action", "save")
+    if action == "geoip_update":
+        try:
+            geoip.update()
+        except Exception as exc:
+            print(f"phishlens: GeoIP update failed ({exc})", file=ctx.req.errors)
+            return redirect("/admin/settings?err=err_geoip")
+        return redirect("/admin/settings?ok=ok_geoip_updated")
+    if stored["source"] == "env":
+        return redirect("/admin/settings?err=err_ai_env")
     if action == "disable":
         for field in ("provider", "url", "model", "key"):
             store.set_setting(ctx.db, "ai_" + field, None)
@@ -411,6 +438,8 @@ def admin_settings(ctx) -> Response:
 
 
 ROUTES = {
+    ("GET", "/dashboard"): dashboard,
+    ("GET", "/api/stats"): api_stats,
     ("GET", "/admin/settings"): admin_settings,
     ("POST", "/admin/settings"): admin_settings,
     ("GET", "/"): lambda ctx: Response(views.analyze_page(ctx)),

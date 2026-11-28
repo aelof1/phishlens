@@ -13,7 +13,7 @@ import ssl
 import sys
 from email import policy
 
-from . import ai, store
+from . import ai, geoip, store
 from .analyzer import analyze_message
 
 MAX_SIZE = 10 * 1024 * 1024
@@ -52,7 +52,7 @@ def scan(client, db, mailbox: str, folder: str, limit: int) -> int:
                     opinion = ai.ask_ai(msg, report, cfg=ai_cfg)
                 except Exception as exc:
                     print(f"uid {uid}: AI unavailable ({exc})", file=sys.stderr)
-            store.save(db, key, uidvalidity, uid, report, opinion)
+            store.save(db, key, uidvalidity, uid, report, opinion, geoip.country(report.origin_ip))
             count += 1
         except (imaplib.IMAP4.abort, OSError):
             raise

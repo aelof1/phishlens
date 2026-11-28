@@ -18,6 +18,7 @@ It checks headers, links and attachments, then gives an explainable risk score o
 - **Web interface**: drag and drop or paste an email, from a computer or a phone, in English or French, light or dark theme
 - **User accounts**: the first admin is created on first start; admins can add viewers
 - **Mailbox connector**: IMAP over TLS, read-only, scans every 5 minutes
+- **Live dashboard**: world map of sending servers (offline GeoIP), last 24 hours, latest emails
 - **Optional AI opinion**: set up from the web interface with Ollama (local), OpenAI, Claude, Mistral, Groq or any OpenAI-compatible API; it never changes the score
 - **Docker**: one `docker compose up -d` for a homelab, with optional mailbox scanner and local Ollama
 - **No third-party Python packages** at runtime, no CDN: works offline
@@ -39,7 +40,8 @@ Install first (except for Docker): see [Installation](#installation).
 flowchart LR
     M[Mailbox] -- "IMAP/TLS, read-only" --> S[Scanner<br>systemd timer or Docker]
     S --> E[Rule engine]
-    E --> D[(SQLite<br>results + accounts)]
+    E --> G[GeoIP<br>local DB-IP file]
+    E --> D[(SQLite<br>results, stats, accounts)]
     D --> W[Web UI<br>phishlens web or Apache]
     U[Browser: .eml upload] --> W
     W --> E
@@ -175,8 +177,9 @@ Then open **http://127.0.0.1:8000**. It works the same on Windows, macOS and Lin
 1. **First start**: the terminal prints a one-time **setup code**. Enter it on the page to create the administrator account. The code stops anyone else on your network from claiming the instance first.
 2. **Analyze**: drop a `.eml` file or paste the source. The report shows the score, SPF/DKIM/DMARC, every finding, the links (as text, never clickable) and the attachment hashes.
 3. **Users** (admins): add accounts. *Admin* manages users; *viewer* analyzes emails and reads the mailbox page.
-4. **Mailbox**: results of the IMAP connector, with filters by verdict (see [Connect a mailbox](web/README.md#connect-a-mailbox)).
-5. **Settings** (admins): turn on the AI opinion, see [below](#ai-opinion-optional).
+4. **Dashboard**: live counters, world map and activity chart (see [below](#dashboard-and-world-map)).
+5. **Mailbox**: results of the IMAP connector, with filters by verdict (see [Connect a mailbox](web/README.md#connect-a-mailbox)).
+6. **Settings** (admins): AI opinion and GeoIP database.
 
 Options:
 
@@ -198,6 +201,36 @@ phishlens user list
 phishlens user reset-password admin
 phishlens user add alice --role admin
 ```
+
+## Dashboard and world map
+
+![Dashboard with world map and activity chart](docs/dashboard.png)
+
+The **Dashboard** page shows, live (refreshed every 10 seconds, paused when the tab is hidden):
+
+- counters for today and since the start, by verdict;
+- the last 24 hours as a stacked chart;
+- a **world map** of where emails come from (switch between all emails and phishing only), with the top countries;
+- the latest emails from the mailbox scanner.
+
+It counts emails from the mailbox scanner and from the Analyze page. For the Analyze page, only an anonymous
+statistic is kept (time, score, verdict, country): never the content, the sender or the IP address.
+
+**Where does the country come from?** phishlens reads the `Received` headers, takes the public IP address of the
+server closest to the sender, and looks it up in a local copy of the free
+[DB-IP Lite](https://db-ip.com/db/download/ip-to-country-lite) database. No IP address is sent to an online service.
+Download the database once (about 5 MB, refreshed monthly by DB-IP):
+
+- from the web interface: **Settings → GeoIP database → Download / update** (admins), or
+- from the command line: `phishlens geoip update` (Docker: `docker compose exec web phishlens geoip update`).
+
+Offline server: download `dbip-country-lite-YYYY-MM.csv.gz` elsewhere, copy it, then `phishlens geoip update --file dbip-country-lite-YYYY-MM.csv.gz`.
+Check an address with `phishlens geoip lookup 185.220.101.4`.
+
+The country is the location of the sending server, not of the person: phishing often goes through rented servers
+or compromised machines. Treat the map as a trend, not as proof.
+
+`GET /api/stats` returns the same numbers as JSON for a signed-in session.
 
 ## AI opinion (optional)
 
@@ -289,11 +322,13 @@ phishlens/
 │   ├── cli.py        # command line: analyze, web, scan, user
 │   ├── imap.py       # mailbox connector
 │   ├── ai.py         # optional AI opinion (OpenAI-compatible and Claude)
-│   ├── store.py      # SQLite: results, accounts, settings
+│   ├── geoip.py      # offline IP to country lookup (DB-IP Lite)
+│   ├── store.py      # SQLite: results, statistics, accounts, settings
 │   └── web/          # web interface (WSGI app, accounts, HTML, CSS, JS)
 ├── web/              # Apache entry point and configuration
 ├── deploy/           # installer and systemd units
 ├── Dockerfile, docker-compose.yml
+├── tools/            # build_world_svg.py (map from Natural Earth)
 ├── samples/          # example emails
 └── tests/            # pytest tests
 ```
@@ -317,7 +352,6 @@ When a dodgy email comes in, I always do the same checks by hand: look at SPF/DK
 
 ## Roadmap
 
-- World map of sending IP addresses (offline GeoIP) and live dashboard
 - Detect domains imitating a brand (`paypa1`, `rnicrosoft`…)
 
 ## Security
@@ -326,4 +360,4 @@ See [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). IP geolocation by [DB-IP](https://db-ip.com) (CC BY 4.0), downloaded separately. World map made with [Natural Earth](https://www.naturalearthdata.com) (public domain).

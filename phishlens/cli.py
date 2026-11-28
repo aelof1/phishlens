@@ -3,6 +3,7 @@
   phishlens <file.eml>... [--json]      analyse emails
   phishlens web [--host] [--port]       start the web interface
   phishlens scan [--every SECONDS]      scan the mailbox (PHISHLENS_IMAP_*)
+  phishlens geoip update|lookup         offline IP to country database
   phishlens user add|reset-password|list|delete
 """
 
@@ -229,8 +230,42 @@ def scan_main(argv: list[str]) -> int:
         time.sleep(max(30, args.every))
 
 
+# --- GeoIP -----------------------------------------------------------------
+
+def geoip_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="phishlens geoip",
+                                     description="Offline IP to country database (DB-IP Lite, CC BY 4.0).")
+    parser.add_argument("--db", help="SQLite database file: the GeoIP file is stored next to it")
+    sub = parser.add_subparsers(dest="command", required=True)
+    up = sub.add_parser("update", help="download this month's database (about 5 MB)")
+    up.add_argument("--file", help="convert a dbip-country-lite CSV (.csv or .csv.gz) downloaded by hand")
+    look = sub.add_parser("lookup", help="country of an IP address")
+    look.add_argument("ip")
+    args = parser.parse_args(argv)
+    if args.db:
+        os.environ["PHISHLENS_DB"] = args.db
+
+    from . import geoip
+    if args.command == "update":
+        try:
+            count, version = geoip.update(source=args.file)
+        except (OSError, RuntimeError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"GeoIP database {version}: {count} ranges -> {geoip.default_path()}")
+        print(geoip.ATTRIBUTION)
+        return 0
+    if geoip.load() is None:
+        print("error: no GeoIP database, run: phishlens geoip update", file=sys.stderr)
+        return 1
+    print(geoip.country(args.ip) or "unknown (private, reserved or not in the database)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "geoip":
+        return geoip_main(argv[1:])
     if argv and argv[0] == "web":
         return web_main(argv[1:])
     if argv and argv[0] == "scan":

@@ -108,6 +108,149 @@
     });
   }
 
+  // ---------- country names in the interface language ----------
+  var regionNames = null;
+  try { regionNames = new Intl.DisplayNames([document.documentElement.lang || "en"], { type: "region" }); }
+  catch (e) { /* old browser: keep the codes */ }
+  function countryName(code) {
+    try { return (regionNames && regionNames.of(code)) || code; } catch (e) { return code; }
+  }
+  function localize(root) {
+    root.querySelectorAll("[data-cc]:not(path)").forEach(function (el) {
+      var code = el.getAttribute("data-cc");
+      el.textContent = countryName(code);
+      el.title = code;
+    });
+  }
+  localize(document);
+
+  // ---------- busy buttons (slow server actions) ----------
+  document.querySelectorAll("form[data-busy]").forEach(function (f) {
+    f.addEventListener("submit", function () {
+      var b = f.querySelector("button");
+      if (b) { b.disabled = true; b.insertBefore(document.createElement("span"), b.firstChild).className = "spinner"; }
+    });
+  });
+
+  // ---------- dashboard: map + live refresh ----------
+  var live = document.getElementById("dash-live");
+  if (live) {
+    var mapBox = document.querySelector("[data-map]");
+    var tip = document.querySelector("[data-map-tip]");
+    var liveText = document.querySelector("[data-live-text]");
+    var liveDot = document.querySelector("[data-live]");
+    var mode = "total";
+    var data = readData();
+    var cssLink = document.querySelector('link[rel="stylesheet"]');
+    var version = cssLink ? (cssLink.href.split("v=")[1] || "") : "";
+
+    function readData() {
+      try { return JSON.parse(document.getElementById("dash-data").textContent); }
+      catch (e) { return { countries: [], last: 0 }; }
+    }
+
+    function colorMap() {
+      if (!mapBox.querySelector("svg")) return;
+      var counts = {};
+      var max = 0;
+      data.countries.forEach(function (c) {
+        counts[c.country] = c;
+        max = Math.max(max, c[mode]);
+      });
+      mapBox.querySelectorAll("path[data-cc]").forEach(function (p) {
+        var c = counts[p.getAttribute("data-cc")];
+        var n = c ? c[mode] : 0;
+        var level = n > 0 && max > 0 ? Math.max(1, Math.ceil(5 * Math.log(1 + n) / Math.log(1 + max))) : 0;
+        p.setAttribute("data-level", String(level));
+      });
+    }
+
+    function showTip(ev, path) {
+      var code = path.getAttribute("data-cc");
+      if (!code) { tip.hidden = true; return; }
+      var c = data.countries.filter(function (x) { return x.country === code; })[0] || { total: 0, phishing: 0 };
+      tip.textContent = tr("map_tip").replace("{name}", countryName(code))
+        .replace("{total}", c.total).replace("{phishing}", c.phishing);
+      var box = mapBox.getBoundingClientRect();
+      var card = mapBox.parentNode.getBoundingClientRect();
+      tip.style.left = Math.min(ev.clientX - card.left + 12, box.width - 180) + "px";
+      tip.style.top = (ev.clientY - card.top + 12) + "px";
+      tip.hidden = false;
+    }
+
+    if (mapBox && window.fetch) {
+      fetch("/static/world.svg?v=" + version).then(function (r) { return r.text(); }).then(function (svg) {
+        mapBox.innerHTML = svg; // our own static file, not user data
+        mapBox.querySelectorAll("title").forEach(function (t) { t.remove(); });
+        colorMap();
+        mapBox.addEventListener("mousemove", function (ev) {
+          if (ev.target.tagName === "path") showTip(ev, ev.target); else tip.hidden = true;
+        });
+        mapBox.addEventListener("click", function (ev) {
+          if (ev.target.tagName === "path") showTip(ev, ev.target);
+        });
+        mapBox.addEventListener("mouseleave", function () { tip.hidden = true; });
+      });
+    }
+    document.querySelectorAll("[data-map-mode]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        mode = btn.getAttribute("data-map-mode");
+        mapBox.parentNode.setAttribute("data-mode", mode);
+        document.querySelectorAll("[data-map-mode]").forEach(function (b) { b.classList.toggle("active", b === btn); });
+        colorMap();
+      });
+    });
+
+    function animateFrom(oldValues) {
+      live.querySelectorAll("[data-count]").forEach(function (el, i) {
+        var from = oldValues[i] || 0;
+        var to = parseInt(el.getAttribute("data-count"), 10) || 0;
+        if (from === to) return;
+        el.classList.add("bump");
+        var start = null;
+        function step(ts) {
+          if (start === null) start = ts;
+          var p = Math.min(1, (ts - start) / 700);
+          el.textContent = Math.round(from + (to - from) * p);
+          if (p < 1) requestAnimationFrame(step); else el.classList.remove("bump");
+        }
+        requestAnimationFrame(step);
+      });
+    }
+
+    function setStatus(text, paused) {
+      if (liveText) liveText.textContent = text;
+      if (liveDot) liveDot.classList.toggle("paused", !!paused);
+    }
+
+    function tick() {
+      if (document.hidden) { setStatus(tr("live_paused"), true); return; }
+      fetch("/api/stats", { credentials: "same-origin" }).then(function (r) {
+        if (r.status === 401) { location.reload(); return null; }
+        return r.ok ? r.json() : null;
+      }).then(function (stats) {
+        if (!stats) return;
+        setStatus(tr("live_updated").replace("{time}", new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
+        if (stats.last_event === data.last) return;
+        var oldValues = Array.prototype.map.call(live.querySelectorAll("[data-count]"), function (el) {
+          return parseInt(el.getAttribute("data-count"), 10) || 0;
+        });
+        return fetch(live.getAttribute("data-refresh"), { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.text() : null; })
+          .then(function (html) {
+            if (html === null) return;
+            live.innerHTML = html; // server-rendered fragment, every value escaped on the server
+            data = readData();
+            localize(live);
+            colorMap();
+            animateFrom(oldValues);
+          });
+      }).catch(function () { setStatus(tr("network_error"), true); });
+    }
+    setInterval(tick, 10000);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) tick(); });
+  }
+
   // ---------- analyze form ----------
   var form = document.getElementById("analyze-form");
   if (!form) return;

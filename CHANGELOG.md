@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0
+
+- Live dashboard: counters, last 24 hours chart, latest emails, refreshed every 10 seconds
+- World map of sending servers with top countries (all emails or phishing only)
+- Offline GeoIP from the free DB-IP Lite database: `phishlens geoip update | lookup`, or a button in Settings
+- Origin IP extracted from the `Received` headers (`origin_ip` and `received_ips` in the JSON output)
+- Anonymous statistics for emails analyzed on the Analyze page (no content, no sender, no IP)
+- `GET /api/stats` (JSON, signed-in session)
+- Country names in the interface language
+
 ## 1.3.0
 
 - AI settings in the web interface (admins): presets for Ollama, OpenAI, Anthropic Claude, Mistral, Groq

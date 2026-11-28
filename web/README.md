@@ -52,6 +52,17 @@ journalctl -u phishlens-scan -n 20
 
 Results appear on the **Mailbox** page.
 
+## Countries and world map
+
+Download the GeoIP database once, from **Settings → GeoIP database** or on the server:
+
+```bash
+cd /opt/phishlens && sudo -u phishlens python3 -m phishlens geoip update
+```
+
+It needs outbound HTTPS to `download.db-ip.com`. DB-IP publishes a new file every month: update it from time to time
+(the button in Settings is enough). Emails analyzed before the download have no country.
+
 ## AI opinion (optional)
 
 Sign in as an admin, open **Settings**, choose a provider (local Ollama, OpenAI, Claude, Mistral, Groq or any
@@ -69,13 +80,14 @@ With a cloud provider, the content of each analyzed email is sent to that provid
 ## Network and security
 
 - Inbound: 443 (and 80 for Let's Encrypt), limited to your network or VPN. Public exposure is not recommended.
-- Outbound: 993 to the mail server, plus the AI API if it is remote (443).
+- Outbound: 993 to the mail server, plus 443 for a remote AI API and the GeoIP download.
 - HTTPS: `sudo apt install certbot python3-certbot-apache && sudo certbot --apache -d your-domain.com`
   (needs a public domain name; otherwise use a certificate from your internal authority).
 - Without HTTPS, passwords travel in clear text. Over HTTPS, session cookies are marked `Secure` automatically.
 - Behind another reverse proxy (Traefik, Caddy, nginx), set `PHISHLENS_TRUST_PROXY=1` so the app trusts
   `X-Forwarded-For` / `X-Forwarded-Proto`. Never set it when clients reach the app directly.
 - Passwords are hashed with scrypt. Five failed logins from one address lock it out for 15 minutes.
-- The database keeps subject, sender, findings and AI opinion, not message bodies.
+- The database keeps subject, sender, findings, origin IP, country and AI opinion of mailbox emails, not message bodies.
+  Emails analyzed on the Analyze page leave only an anonymous statistic (time, score, verdict, country).
 
 Troubleshooting: `sudo tail /var/log/apache2/phishlens_error.log`

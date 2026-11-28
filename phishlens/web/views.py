@@ -28,6 +28,7 @@ ICONS = {
     "spark": '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
     "mail": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
     "check": '<path d="M5 12l5 5 9-10"/>',
+    "chart": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     "gear": '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3'
             'M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
 }
@@ -87,7 +88,8 @@ def _theme_button(t) -> str:
 
 def layout(ctx, title: str, body: str, active: str = "") -> bytes:
     t, user = ctx.t, ctx.user
-    nav = [("/", "scan", "nav_analyze"), ("/mailbox", "inbox", "nav_mailbox")]
+    nav = [("/", "scan", "nav_analyze"), ("/dashboard", "chart", "nav_dashboard"),
+           ("/mailbox", "inbox", "nav_mailbox")]
     if user["role"] == "admin":
         nav.append(("/admin/users", "users", "nav_users"))
         nav.append(("/admin/settings", "gear", "nav_settings"))
@@ -212,6 +214,13 @@ def error_box(message: str) -> str:
     return f'<div class="flash flash-bad" role="alert">{esc(message)}</div>'
 
 
+def country_tag(code: str | None) -> str:
+    """Country code; app.js replaces the text with the localized name (Intl.DisplayNames)."""
+    if not code:
+        return ""
+    return f'<span class="tag country" data-cc="{esc(code)}">{esc(code)}</span>'
+
+
 def _auth_class(value: str) -> str:
     if value == "pass":
         return "ok"
@@ -224,7 +233,8 @@ def _empty(text: str) -> str:
     return f'<p class="muted empty">{esc(text)}</p>'
 
 
-def report_html(t, report, ai_text: str | None = None, ai_failed: bool = False) -> str:
+def report_html(t, report, ai_text: str | None = None, ai_failed: bool = False,
+                country: str | None = None) -> str:
     v = report.verdict
     cls = VERDICT_CLASS.get(v, "ok")
     offset = GAUGE * (1 - report.score / 100)
@@ -244,6 +254,9 @@ def report_html(t, report, ai_text: str | None = None, ai_failed: bool = False) 
     rows = [("h_subject", report.subject), ("h_from", report.sender),
             ("h_reply_to", report.reply_to), ("h_return_path", report.return_path)]
     headers = "".join(f"<dt>{esc(t(k))}</dt><dd>{esc(val) if val else '—'}</dd>" for k, val in rows)
+    if report.origin_ip:
+        headers += (f'<dt>{esc(t("h_origin"))}</dt><dd><code>{esc(report.origin_ip)}</code> '
+                    f'{country_tag(country)}</dd>')
 
     link_items = []
     for link in report.links:
@@ -394,7 +407,9 @@ def account_page(ctx) -> bytes:
 # --- settings --------------------------------------------------------------
 
 def settings_page(ctx, cfg: dict, test=None, error_key: str | None = None) -> bytes:
-    from .. import ai
+    from .. import ai, geoip
+    geo = geoip.load()
+    geo_version = geo.version if geo else None
     t = ctx.t
     current = ctx.ai
     if current["url"]:
@@ -415,7 +430,7 @@ def settings_page(ctx, cfg: dict, test=None, error_key: str | None = None) -> by
 
     if current["source"] == "env":
         body = f"""<section class="card narrow"><h3>{icon("spark")} {esc(t("ai_title"))}</h3>{status}
-<p class="muted">{esc(t("ai_env_note"))}</p></section>"""
+<p class="muted">{esc(t("ai_env_note"))}</p></section>""" + geoip_card(ctx, geo_version)
         return layout(ctx, t("settings_title"), body, "/admin/settings")
 
     selected = cfg.get("provider") or "ollama"
@@ -456,5 +471,115 @@ def settings_page(ctx, cfg: dict, test=None, error_key: str | None = None) -> by
 </form>
 <p class="hint">{esc(t("ai_docker_hint"))}</p>
 {disable}
-</section>"""
+</section>""" + geoip_card(ctx, geo_version)
     return layout(ctx, t("settings_title"), body, "/admin/settings")
+
+
+# --- dashboard -------------------------------------------------------------
+
+VERDICTS = ("PROBABLY SAFE", "SUSPICIOUS", "PHISHING")
+
+
+def chart_svg(t, hours: list[dict]) -> str:
+    """Stacked bars, one per hour (UTC). Plain SVG: readable without JavaScript."""
+    width, height, pad = 720, 170, 22
+    top = max([sum(h[v] for v in VERDICTS) for h in hours] + [1])
+    slot = width / len(hours)
+    bars = []
+    for i, h in enumerate(hours):
+        x = i * slot + slot * 0.15
+        y = height - pad
+        total = sum(h[v] for v in VERDICTS)
+        for verdict in VERDICTS:
+            n = h[verdict]
+            if not n:
+                continue
+            bar = (height - pad - 8) * n / top
+            y -= bar
+            bars.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{slot * 0.7:.1f}" height="{bar:.1f}" rx="2" '
+                        f'class="bar-{VERDICT_CLASS[verdict]}"/>')
+        label = esc(h["hour"][11:13]) + ":00 UTC"
+        bars.append(f'<rect x="{i * slot:.1f}" y="0" width="{slot:.1f}" height="{height - pad}" class="hit">'
+                    f'<title>{label} · {total}</title></rect>')
+        if i % 6 == 0 or i == len(hours) - 1:
+            bars.append(f'<text x="{x + slot * 0.35:.1f}" y="{height - 6}" class="axis">{esc(h["hour"][11:13])}h</text>')
+    return (f'<svg class="chart" viewBox="0 0 {width} {height}" role="img" '
+            f'aria-label="{esc(t("activity_title"))}"><line x1="0" x2="{width}" y1="{height - pad}" '
+            f'y2="{height - pad}" class="baseline"/>{"".join(bars)}</svg>')
+
+
+def dashboard_live(ctx, stats: dict, geo_ready: bool) -> str:
+    """The part of the dashboard that app.js refreshes."""
+    t = ctx.t
+    today, total = stats["today"], stats["all"]
+    tiles = [("dash_today", today["total"], "neutral"), ("verdict_PHISHING", today["PHISHING"], "bad"),
+             ("verdict_SUSPICIOUS", today["SUSPICIOUS"], "warn"), ("dash_all_time", total["total"], "neutral")]
+    tile_html = "".join(
+        f'<div class="stat stat-{cls}"><span>{esc(t(key))}</span><b data-count="{n}">{n}</b>'
+        f'{"<small>" + esc(t("dash_today_short")) + "</small>" if key.startswith("verdict_") else ""}</div>'
+        for key, n, cls in tiles)
+
+    top = stats["countries"][:8]
+    best = max([c["total"] for c in top] + [1])
+    rows = "".join(
+        f'<li><span class="cc">{country_tag(c["country"])}</span>'
+        f'<svg class="bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">'
+        f'<rect width="100" height="6" rx="3" class="bar-bg"/>'
+        f'<rect width="{max(2, c["total"] * 100 // best)}" height="6" rx="3" class="bar-fg"/></svg>'
+        f'<b>{c["total"]}</b><small class="muted">{c["phishing"]} {esc(t("verdict_PHISHING").lower())}</small></li>'
+        for c in top)
+    if not geo_ready:
+        countries = f'<p class="muted">{esc(t("geoip_missing_admin" if ctx.user["role"] == "admin" else "geoip_missing"))}</p>'
+    elif rows:
+        countries = f'<ul class="countries">{rows}</ul>'
+    else:
+        countries = f'<p class="muted empty">{esc(t("no_country_data"))}</p>'
+
+    feed = []
+    for r in stats["latest"]:
+        cls = VERDICT_CLASS.get(r["verdict"], "ok")
+        feed.append(f"""<li><span class="score score-{cls}">{r["score"]}</span>
+<span class="mail-main"><b>{esc(r["subject"] or t("no_subject"))}</b><small class="muted">{esc(r["sender"])}</small></span>
+{country_tag(r["country"])}<time class="muted">{esc(r["scanned"][11:16])}</time></li>""")
+    feed_html = f'<ul class="feed">{"".join(feed)}</ul>' if feed else _empty(t("latest_empty"))
+
+    data = json.dumps({"countries": stats["countries"], "last": stats["last_event"]}).replace("<", "\\u003c")
+    return f"""<div class="stats">{tile_html}</div>
+<div class="grid">
+  <section class="card span-2"><h3>{icon("chart")} {esc(t("activity_title"))}
+    <span class="legend"><i class="dot ok"></i>{esc(t("verdict_PROBABLY SAFE"))} <i class="dot warn"></i>{esc(t("verdict_SUSPICIOUS"))} <i class="dot bad"></i>{esc(t("verdict_PHISHING"))}</span></h3>
+    {chart_svg(t, stats["hours"])}</section>
+  <section class="card"><h3>{icon("alert")} {esc(t("top_countries"))}</h3>{countries}</section>
+  <section class="card"><h3>{icon("inbox")} {esc(t("latest_title"))}</h3>{feed_html}</section>
+</div>
+<script type="application/json" id="dash-data">{data}</script>"""
+
+
+def dashboard_page(ctx, stats: dict, geo_version: str | None) -> bytes:
+    t = ctx.t
+    from ..geoip import ATTRIBUTION
+    map_note = (f'<p class="hint">{esc(ATTRIBUTION)} · <a href="https://db-ip.com" rel="noreferrer">db-ip.com</a> · '
+                f'{esc(t("geoip_version", version=geo_version))}</p>') if geo_version else ""
+    body = f"""<div class="dash-head"><p class="muted">{esc(t("dash_intro"))}</p>
+<span class="live js-only" data-live><i></i><span data-live-text>{esc(t("live"))}</span></span></div>
+<section class="card map-card">
+  <h3>{icon("link")} {esc(t("map_title"))}
+    <span class="seg js-only" role="group"><button type="button" class="active" data-map-mode="total">{esc(t("map_all"))}</button><button type="button" data-map-mode="phishing">{esc(t("verdict_PHISHING"))}</button></span></h3>
+  <div class="map" data-map><noscript><p class="muted">{esc(t("map_noscript"))}</p></noscript></div>
+  <div class="map-tip" data-map-tip hidden></div>
+  <div class="map-legend js-only"><span>{esc(t("map_less"))}</span><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><i class="l5"></i><span>{esc(t("map_more"))}</span></div>
+  {map_note}
+</section>
+<div id="dash-live" data-refresh="/dashboard?partial=1">{dashboard_live(ctx, stats, bool(geo_version))}</div>"""
+    return layout(ctx, t("dashboard_title"), body, "/dashboard")
+
+
+def geoip_card(ctx, geo_version: str | None) -> str:
+    t = ctx.t
+    status = (f'<p class="status status-on">{icon("check")} {esc(t("geoip_version", version=geo_version))}</p>'
+              if geo_version else f'<p class="status">{esc(t("geoip_none"))}</p>')
+    return f"""<section class="card narrow"><h3>{icon("link")} {esc(t("geoip_title"))}</h3>
+{status}<p class="muted">{esc(t("geoip_intro"))}</p>
+<form method="post" action="/admin/settings" class="inline" data-busy>{csrf_field(ctx.csrf)}
+<input type="hidden" name="action" value="geoip_update"><button class="btn">{esc(t("geoip_update_btn"))}</button></form>
+</section>"""
