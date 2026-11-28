@@ -6,7 +6,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 
 apt-get update
-apt-get install -y apache2 apache2-utils libapache2-mod-wsgi-py3 python3
+apt-get install -y apache2 libapache2-mod-wsgi-py3 python3
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' || { echo "Python 3.10+ required." >&2; exit 1; }
 
 id phishlens >/dev/null 2>&1 || useradd --system --home-dir /var/lib/phishlens --shell /usr/sbin/nologin phishlens
@@ -20,12 +20,6 @@ install -d -o root -g phishlens -m 750 /etc/phishlens
 
 install -m 644 "$SRC"/deploy/phishlens-scan.{service,timer} /etc/systemd/system/
 [ -f /etc/apache2/sites-available/phishlens.conf ] || install -m 644 "$SRC/web/phishlens.conf" /etc/apache2/sites-available/
-if [ ! -f /etc/apache2/phishlens.htpasswd ]; then
-    echo "Choose the password of the web user 'admin':"
-    htpasswd -c -B /etc/apache2/phishlens.htpasswd admin
-fi
-chown root:www-data /etc/apache2/phishlens.htpasswd
-chmod 640 /etc/apache2/phishlens.htpasswd
 a2ensite phishlens
 apache2ctl configtest
 systemctl daemon-reload
@@ -36,8 +30,11 @@ cat <<'MSG'
 Installed. Next:
   1. sudo nano /etc/apache2/sites-available/phishlens.conf   (ServerName)
      sudo systemctl reload apache2
-  2. sudo nano /etc/phishlens/mail.env
-  3. sudo nano /etc/phishlens/ai.env        (optional)
-  4. sudo systemctl enable --now phishlens-scan.timer
+  2. Open the site and create the admin account. The setup code is in the log:
+     sudo grep "Setup code" /var/log/apache2/phishlens_error.log
+     (or: cd /opt/phishlens && sudo -u phishlens python3 -m phishlens user add admin --role admin)
+  3. sudo nano /etc/phishlens/mail.env
+  4. sudo nano /etc/phishlens/ai.env        (optional)
+  5. sudo systemctl enable --now phishlens-scan.timer
   Logs: journalctl -u phishlens-scan
 MSG

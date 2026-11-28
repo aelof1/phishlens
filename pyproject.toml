@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phishlens"
-version = "1.1.0"
-description = "Offline phishing email (.eml) analyzer"
+version = "1.2.0"
+description = "Self-hosted phishing email analyzer: CLI, web interface, IMAP connector"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -18,4 +18,7 @@ dev = ["pytest"]
 phishlens = "phishlens.cli:main"
 
 [tool.setuptools]
-packages = ["phishlens"]
+packages = ["phishlens", "phishlens.web"]
+
+[tool.setuptools.package-data]
+"phishlens.web" = ["static/*"]

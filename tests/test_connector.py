@@ -50,11 +50,16 @@ def test_ai_request(monkeypatch):
 
 def test_web_dashboard_escapes(tmp_path, monkeypatch):
     monkeypatch.setenv("PHISHLENS_DB", str(tmp_path / "t.db"))
+    from phishlens.web import auth
     report = analyze_bytes(b"Subject: <script>x</script>\r\n\r\nhi")
-    store.save(store.connect(), "me", "1", 1, report, "<img>")
+    db = store.connect()
+    store.save(db, "me", "1", 1, report, "<img>")
+    token = auth.create_session(db, auth.create_user(db, "admin", "long-password-1", "admin"))
     app = runpy.run_path(str(ROOT / "web" / "app.wsgi"))["application"]
-    page = b"".join(app({"REQUEST_METHOD": "GET"}, lambda s, h: None)).decode()
-    assert "&lt;script&gt;" in page and "<script>" not in page and "<img>" not in page
+    environ = {"REQUEST_METHOD": "GET", "PATH_INFO": "/mailbox",
+               "HTTP_COOKIE": f"phishlens_session={token}"}
+    page = b"".join(app(environ, lambda s, h: None)).decode()
+    assert "&lt;script&gt;" in page and "<script>x" not in page and "<img>" not in page
 
 
 def test_web_upload_like_a_browser():
