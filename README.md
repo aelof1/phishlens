@@ -32,7 +32,7 @@ It checks headers, links and attachments, then gives an explainable risk score o
 | Run it in my homelab | `docker compose up -d`: see [Docker](#docker) |
 | Install it on a Debian / Ubuntu server with Apache | [Deploy on a server](#deploy-on-a-server) |
 
-Install first (except for Docker): see [Installation](#installation).
+Install first (except for Docker): see [Installation](#installation). Full list of commands and settings: [docs/REFERENCE.md](docs/REFERENCE.md).
 
 ## Architecture
 
@@ -313,6 +313,37 @@ Setup, mailbox connection, AI, HTTPS and network rules: [web/README.md](web/READ
 
 > **Project status:** early version. Automated tests run on Linux and Windows. Test the Apache deployment on your own server before relying on it. The command line is offline; the mailbox connector and the AI option use the network.
 
+## Upgrading
+
+```bash
+cd phishlens
+git pull
+pip install .            # or: pipx install --force .
+```
+
+- **Docker**: `git pull && docker compose up -d --build`. Data stays in the `phishlens-data` volume.
+- **Apache server**: `git pull && sudo ./deploy/install.sh` (existing settings files are kept), then `sudo systemctl restart apache2`.
+- The database is upgraded automatically on start; back it up first if you care about its history.
+- From 1.1: create the first admin account on first visit (setup code), see [web/README.md](web/README.md#create-the-admin-account).
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `phishlens` is not recognized (Windows) | Add the Python *Scripts* folder to `PATH` ([Windows install](#windows)), or use `python -m phishlens` |
+| `Directory '.' is not installable` | Run `pip install .` in the folder that contains `pyproject.toml`, not in the inner `phishlens` folder |
+| `Failed to resolve 'pypi.org'` during `pip install` | No internet for pip: fix the connection or proxy, or `pip install --no-build-isolation .` |
+| `cannot listen on 127.0.0.1:8000` | Port in use: `phishlens web --port 8080` |
+| Lost the setup code | Restart `phishlens web` (or read the Apache error log / `docker compose logs web`): it is printed again while no account exists |
+| Lost the admin password | `phishlens user reset-password admin` on the server (Docker: `docker compose exec web phishlens user reset-password admin`) |
+| "Too many failed attempts" | Wait 15 minutes. Behind a reverse proxy, set `PHISHLENS_TRUST_PROXY=1` so each client is counted separately |
+| Map and countries are empty | Download the GeoIP database (Settings, or `phishlens geoip update`). Only emails analyzed afterwards get a country |
+| "AI unavailable" in the report | Settings → **Test connection** shows the exact error (wrong key, model name, Ollama not running…) |
+| Mailbox page stays empty | Run `phishlens scan` once in a terminal: it prints the IMAP error (Gmail needs an app password) |
+| Dashboard does not update | It refreshes every 10 s only while the tab is visible; check that `/api/stats` answers |
+
+Every command, variable, endpoint and stored field is listed in [docs/REFERENCE.md](docs/REFERENCE.md).
+
 ## Project layout
 
 ```
@@ -328,6 +359,7 @@ phishlens/
 ├── web/              # Apache entry point and configuration
 ├── deploy/           # installer and systemd units
 ├── Dockerfile, docker-compose.yml
+├── docs/             # screenshots and REFERENCE.md
 ├── tools/            # build_world_svg.py (map from Natural Earth)
 ├── samples/          # example emails
 └── tests/            # pytest tests
